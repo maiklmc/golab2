@@ -123,7 +123,7 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 		v.validateNode(fields["os"], "spec.os", false)
 		v.validateNode(fields["containers"], "spec.containers", true)
 	case "spec.os":
-		v.validateNode(fields["name"], "spec.os.name", true) // <-- Полный путь передан
+		v.validateNode(fields["name"], "spec.os.name", true)
 	case "containers":
 		for _, containerNode := range node.Content {
 			if containerNode.Kind == yaml.MappingNode {
@@ -136,13 +136,6 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 				v.validatePort(portNode)
 			}
 		}
-	case "containers.readinessProbe", "containers.livenessProbe":
-		v.validateProbe(node)
-	case "resources":
-		v.validateNode(fields["limits"], "resources.limits", false)
-		v.validateNode(fields["requests"], "resources.requests", false)
-	case "resources.limits", "resources.requests":
-		v.validateResourceRequirements(node)
 	}
 }
 
@@ -294,13 +287,12 @@ func main() {
 	validator := NewValidator(filename)
 	validator.validateNode(&doc, "", true)
 
-	// Вывод всех ошибок
+	// Вывод только ошибок (без "YAML is valid")
 	if len(validator.errors) > 0 {
 		for _, errMsg := range validator.errors {
 			fmt.Println(errMsg)
 		}
 		os.Exit(1)
-	} else {
-		fmt.Println("YAML is valid")
 	}
+	// Если ошибок нет — молча выходим с кодом 0 (без вывода)
 }
