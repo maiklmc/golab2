@@ -60,7 +60,7 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 		}
 	case "metadata.name":
 		if node.Value == "" {
-			v.errorf(node.Line, path, "is required")
+			v.errorf(node.Line, "name", "is required")
 		}
 	case "spec.os.name":
 		if node.Value != "linux" && node.Value != "windows" {
