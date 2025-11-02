@@ -19,7 +19,7 @@ func NewValidator(filename string) *Validator {
 }
 
 func (v *Validator) errorf(line int, field, msg string) {
-	fmt.Println(fmt.Sprintf("%s:%d %s %s", v.filename, line, field, msg))
+	fmt.Printf("%s:%d %s %s\n", v.filename, line, field, msg)
 	os.Exit(1)
 }
 
