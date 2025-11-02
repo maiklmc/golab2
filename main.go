@@ -68,7 +68,7 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 		}
 	case "containers.name":
 		if !isValidSnakeCase(node.Value) {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+			v.errorf(node.Line, "containers.name", "has invalid format '"+node.Value+"'")
 		}
 	case "containers.image":
 		if !strings.HasPrefix(node.Value, "registry.bigbrother.io/") || !strings.Contains(node.Value, ":") {
@@ -162,7 +162,6 @@ func (v *Validator) validateContainer(containerNode *yaml.Node) {
 
 func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
-
 	portStr := getScalarValue(fields["containerPort"])
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 || port >= 65536 {
@@ -170,9 +169,8 @@ func (v *Validator) validatePort(portNode *yaml.Node) {
 		if fields["containerPort"] != nil {
 			line = fields["containerPort"].Line
 		}
-		v.errorf(line, "containers.ports.containerPort", "value out of range")
+		v.errorf(line, "containerPort", "value out of range") // Кратчайший путь
 	}
-
 	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
 }
 
@@ -203,22 +201,19 @@ func (v *Validator) validateProbe(probeNode *yaml.Node) {
 
 func (v *Validator) validateResourceRequirements(node *yaml.Node) {
 	fields := extractFields(node)
-
 	for _, field := range []string{"cpu", "memory"} {
 		cpuNode := fields[field]
 		if cpuNode == nil {
 			continue
 		}
-
 		switch field {
 		case "cpu":
-			if cpuNode.Tag != "!!int" {
+			_, err := strconv.Atoi(cpuNode.Value)
+			if err != nil {
 				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
-			} else {
-				_, err := strconv.Atoi(cpuNode.Value)
-				if err != nil {
-					v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
-				}
+			} else if cpuNode.Tag != "!!int" {
+				// Значение числовое, но записано как строка (например, "1")
+				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
 			}
 		case "memory":
 			if !isValidMemoryFormat(cpuNode.Value) {
