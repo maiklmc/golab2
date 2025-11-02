@@ -119,7 +119,11 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 		v.validateNode(fields["os"], "spec.os", false)
 		v.validateNode(fields["containers"], "spec.containers", true)
 	case "spec.os":
-		v.validateNode(fields["name"], "spec.os.name", true)
+		if node.Kind == yaml.MappingNode {
+			v.validateNode(fields["name"], "spec.os.name", true)
+		} else {
+			v.addError(node.Line, "spec.os", "must be an object")
+		}
 	case "containers":
 		for _, containerNode := range node.Content {
 			if containerNode.Kind == yaml.MappingNode {
@@ -163,8 +167,17 @@ func (v *Validator) validateContainer(containerNode *yaml.Node) {
 
 func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
+	portValue := fields["containerPort"]
 
-	v.validateNode(fields["containerPort"], "containers.ports.containerPort", true)
+	if portValue != nil && portValue.Value != "" {
+		port, err := strconv.Atoi(portValue.Value)
+		if err != nil || port <= 0 || port > 65535 {
+			v.addError(portValue.Line, "containers.ports.containerPort", "value out of range")
+		}
+	} else {
+		v.addError(portNode.Line, "containers.ports.containerPort", "is required")
+	}
+
 	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
 }
 
