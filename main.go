@@ -63,7 +63,9 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.addError(node.Line, path, "has unsupported value '"+node.Value+"'")
 		}
 	case "containers.name":
-		if !isValidSnakeCase(node.Value) {
+		if node.Value == "" {
+			v.addError(node.Line, path, "is required")
+		} else if !isValidSnakeCase(node.Value) {
 			v.addError(node.Line, path, "has invalid format '"+node.Value+"'")
 		}
 	case "containers.image":
@@ -83,26 +85,19 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.addError(node.Line, path, "has invalid format '"+node.Value+"'")
 		}
 	case "resources.limits.cpu", "resources.requests.cpu":
-		// Проверка на пустое значение
 		if node.Value == "" {
 			v.addError(node.Line, path, "must be int (empty value)")
 			break
 		}
-
-		// Сначала пытаемся преобразовать в число
 		_, err := strconv.Atoi(node.Value)
 		if err == nil {
-			// Значение успешно преобразовано — считаем валидным
 			break
 		}
-
-		// Если преобразование не удалось, проверяем тег (для крайних случаев)
 		if node.Tag == "!!int" {
 			v.addError(node.Line, path, "must be int (invalid format despite !!int tag)")
 		} else {
 			v.addError(node.Line, path, "must be int")
 		}
-
 	}
 }
 
@@ -182,7 +177,15 @@ func (v *Validator) validatePort(portNode *yaml.Node) {
 
 	portStr := getScalarValue(fields["containerPort"])
 	port, err := strconv.Atoi(portStr)
-	if err != nil || port <= 0 || port >= 65536 {
+	if err != nil {
+		line := 0
+		if fields["containerPort"] != nil {
+			line = fields["containerPort"].Line
+		}
+		v.addError(line, "containers.ports.containerPort", "must be int")
+		return
+	}
+	if port <= 0 || port > 65535 {
 		line := 0
 		if fields["containerPort"] != nil {
 			line = fields["containerPort"].Line
@@ -205,14 +208,13 @@ func (v *Validator) validateProbe(probeNode *yaml.Node) {
 	httpFields := extractFields(httpGetNode)
 	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true)
 
-
 	portNode := httpFields["port"]
 	if portNode == nil {
 		v.addError(httpGetNode.Line, "containers.readinessProbe.httpGet.port", "is required")
 	} else {
 		portStr := getScalarValue(portNode)
 		port, err := strconv.Atoi(portStr)
-		if err != nil || port <= 0 || port >= 65536 {
+		if err != nil || port <= 0 || port > 65535 {
 			v.addError(portNode.Line, "containers.readinessProbe.httpGet.port", "value out of range")
 		}
 	}
@@ -224,7 +226,7 @@ func (v *Validator) validateResourceRequirements(node *yaml.Node) {
 	v.validateNode(fields["memory"], "resources.limits.memory", false)
 }
 
-// Вспомогательные функции (остаются без изменений, но убедитесь, что они есть в коде)
+// Вспомогательные функции
 func extractFields(node *yaml.Node) map[string]*yaml.Node {
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
@@ -291,7 +293,6 @@ func main() {
 
 	validator := NewValidator(filename)
 	validator.validateNode(&doc, "", true)
-
 
 	// Вывод всех ошибок
 	if len(validator.errors) > 0 {
