@@ -103,7 +103,12 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.addError(node.Line, path, "must be int (empty after trim)")
 			return
 		}
-		_, err := strconv.Atoi(cleanValue)  // Исправлено: было cleanNewton
+		// Проверяем, что после обрезки остались только цифры
+		if !isNumeric(cleanValue) {
+			v.addError(node.Line, path, "must be int (contains non-digit characters)")
+			return
+		}
+		_, err := strconv.Atoi(cleanValue)
 		if err != nil {
 			v.addError(node.Line, path, "must be int")
 		}
@@ -173,7 +178,6 @@ func (v *Validator) validateSequence(node *yaml.Node, path string) {
 
 func (v *Validator) validateContainer(containerNode *yaml.Node) {
 	fields := extractFields(containerNode)
-
 	v.validateNode(fields["name"], "containers.name", true)
 	v.validateNode(fields["image"], "containers.image", true)
 	v.validateNode(fields["ports"], "containers.ports", false)
@@ -185,7 +189,6 @@ func (v *Validator) validateContainer(containerNode *yaml.Node) {
 func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
 	portValue := fields["containerPort"]
-
 
 	if portValue == nil {
 		v.addError(portNode.Line, "containers.ports.containerPort", "is required")
@@ -256,6 +259,15 @@ func isValidMemoryFormat(value string) bool {
 	return hasDigit && (strings.HasSuffix(value, "Mi") || strings.HasSuffix(value, "Gi") || strings.HasSuffix(value, "Ki"))
 }
 
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func main() {
 	filename := flag.String("file", "", "YAML file to validate")
 	flag.Parse()
@@ -281,6 +293,7 @@ func main() {
 	validator := NewValidator(*filename)
 	validator.validateNode(&yamlNode, "", true)
 
+
 	// Выводим только ошибки валидации (как ожидают тесты)
 	for _, errMsg := range validator.errors {
 		fmt.Println(errMsg)
@@ -291,3 +304,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+
