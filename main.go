@@ -123,7 +123,7 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 		v.validateNode(fields["os"], "spec.os", false)
 		v.validateNode(fields["containers"], "spec.containers", true)
 	case "spec.os":
-		v.validateNode(fields["name"], "spec.os.name", true)
+		v.validateNode(fields["name"], "spec.os.name", true) // <-- Полный путь передан
 	case "containers":
 		for _, containerNode := range node.Content {
 			if containerNode.Kind == yaml.MappingNode {
