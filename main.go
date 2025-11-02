@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -12,15 +13,21 @@ import (
 
 type Validator struct {
 	filename string
+	errors   []string // Собираем все ошибки, а не выходим сразу
 }
 
 func NewValidator(filename string) *Validator {
-	return &Validator{filename: filename}
+	return &Validator{
+		filename: filename,
+		errors:   []string{},
+	}
 }
 
+// errorf добавляет ошибку в список (не вызывает os.Exit)
 func (v *Validator) errorf(line int, field, msg string) {
-	fmt.Printf("%s:%d %s %s\n", v.filename, line, field, msg)
-	os.Exit(1)
+	// Берём только имя файла (без пути)
+	filename := filepath.Base(v.filename)
+	v.errors = append(v.errors, fmt.Sprintf("%s:%d %s %s", filename, line, field, msg))
 }
 
 func (v *Validator) validateNode(node *yaml.Node, path string, required bool) {
@@ -108,7 +115,7 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 	case "containers":
 		for _, containerNode := range node.Content {
 			if containerNode.Kind == yaml.MappingNode {
-				v.validateContainer(containerNode) // Исправлено
+				v.validateContainer(containerNode)
 			}
 		}
 	case "containers.ports":
@@ -303,13 +310,16 @@ func main() {
 
 	validator := NewValidator(filename)
 
-	if len(root.Content) == 0 {
-		validator.errorf(0, "", "invalid YAML structure")
-	}
-
+	// Проходим по всем документам в YAML (может быть несколько через ---)
 	for _, doc := range root.Content {
 		validator.validateNode(doc, "", true)
 	}
 
-	os.Exit(0)
+	// Если есть ошибки — выводим их и завершаем с ошибкой
+	if len(validator.errors) > 0 {
+		for _, errMsg := range validator.errors {
+			fmt.Println(errMsg)
+		}
+		os.Exit(1)
+	}
 }
