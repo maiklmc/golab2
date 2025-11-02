@@ -103,7 +103,7 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.addError(node.Line, path, "must be int (empty after trim)")
 			return
 		}
-		_, err := strconv.Atoi(cleanNewton)
+		_, err := strconv.Atoi(cleanValue)  // Исправлено: было cleanNewton
 		if err != nil {
 			v.addError(node.Line, path, "must be int")
 		}
