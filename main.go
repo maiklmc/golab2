@@ -272,34 +272,31 @@ func main() {
 	filename := flag.String("file", "", "YAML file to validate")
 	flag.Parse()
 
-	// Если файл не указан — молча выходим с ошибкой (без вывода Usage)
 	if *filename == "" {
 		os.Exit(1)
 	}
 
 	data, err := os.ReadFile(*filename)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
+		fmt.Println("Error reading file:", err) // Но это не ошибка валидации, а системная
 		os.Exit(1)
 	}
 
 	var yamlNode yaml.Node
 	err = yaml.Unmarshal(data, &yamlNode)
 	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
+		fmt.Println("Error parsing YAML:", err)
 		os.Exit(1)
 	}
 
 	validator := NewValidator(*filename)
 	validator.validateNode(&yamlNode, "", true)
 
-
-	// Выводим только ошибки валидации (как ожидают тесты)
+	// ВЫВОД ОШИБОК ТОЛЬКО ЧЕРЕЗ fmt.Println (строго по одной на строку)
 	for _, errMsg := range validator.errors {
-		fmt.Println(errMsg)
+		fmt.Println(errMsg) // Именно так — без "Errors:", "FAIL:" и т.п.
 	}
 
-	// Если есть ошибки — exit 1, иначе 0
 	if len(validator.errors) > 0 {
 		os.Exit(1)
 	}
