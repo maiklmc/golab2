@@ -80,6 +80,15 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 		if !strings.HasPrefix(node.Value, "/") {
 			v.addError(node.Line, path, "has invalid format '"+node.Value+"'")
 		}
+	case "containers.readinessProbe.httpGet.port", "containers.livenessProbe.httpGet.port":
+		if node.Value == "" {
+			v.addError(node.Line, path, "is required")
+			return
+		}
+		port, err := strconv.Atoi(node.Value)
+		if err != nil || port <= 0 || port > 65535 {
+			v.addError(node.Line, path, "value out of range")
+		}
 	case "resources.limits.memory", "resources.requests.memory":
 		if !isValidMemoryFormat(node.Value) {
 			v.addError(node.Line, path, "has invalid format '"+node.Value+"'")
@@ -90,11 +99,19 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			return
 		}
 		cleanValue := strings.Trim(node.Value, `"'`)
-		_, err := strconv.Atoi(cleanValue)
+		if cleanValue == "" {
+			v.addError(node.Line, path, "must be int (empty after trim)")
+			return
+		}
+		_, err := strconv.Atoi(cleanNewton)
 		if err != nil {
 			v.addError(node.Line, path, "must be int")
 		}
 	case "containers.ports.containerPort":
+		if node.Value == "" {
+			v.addError(node.Line, path, "is required")
+			return
+		}
 		port, err := strconv.Atoi(node.Value)
 		if err != nil || port <= 0 || port > 65535 {
 			v.addError(node.Line, path, "value out of range")
@@ -169,13 +186,20 @@ func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
 	portValue := fields["containerPort"]
 
-	if portValue != nil && portValue.Value != "" {
-		port, err := strconv.Atoi(portValue.Value)
-		if err != nil || port <= 0 || port > 65535 {
-			v.addError(portValue.Line, "containers.ports.containerPort", "value out of range")
-		}
-	} else {
+
+	if portValue == nil {
 		v.addError(portNode.Line, "containers.ports.containerPort", "is required")
+		return
+	}
+
+	if portValue.Value == "" {
+		v.addError(portValue.Line, "containers.ports.containerPort", "is required")
+		return
+	}
+
+	port, err := strconv.Atoi(portValue.Value)
+	if err != nil || port <= 0 || port > 65535 {
+		v.addError(portValue.Line, "containers.ports.containerPort", "value out of range")
 	}
 
 	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
