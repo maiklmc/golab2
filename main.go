@@ -87,9 +87,10 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 	case "resources.limits.cpu", "resources.requests.cpu":
 		if node.Value == "" {
 			v.addError(node.Line, path, "must be int (empty value)")
-			break
+			return
 		}
-		_, err := strconv.Atoi(node.Value)
+		cleanValue := strings.Trim(node.Value, `"'`)
+		_, err := strconv.Atoi(cleanValue)
 		if err != nil {
 			v.addError(node.Line, path, "must be int")
 		}
@@ -102,12 +103,7 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 }
 
 func (v *Validator) validateMapping(node *yaml.Node, path string, required bool) {
-	fields := make(map[string]*yaml.Node)
-	for i := 0; i < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valueNode := node.Content[i+1]
-		fields[keyNode.Value] = valueNode
-	}
+	fields := extractFields(node)
 
 	switch path {
 	case "":
@@ -167,35 +163,10 @@ func (v *Validator) validateContainer(containerNode *yaml.Node) {
 
 func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
+
 	v.validateNode(fields["containerPort"], "containers.ports.containerPort", true)
 	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
 }
-
-func (v *Validator) validateProbe(probeNode *yaml.Node) {
-	fields := extractFields(probeNode)
-	httpGetNode := fields["httpGet"]
-
-	if httpGetNode == nil {
-		v.addError(probeNode.Line, "containers.readinessProbe.httpGet", "is required")
-		return
-	}
-
-	httpFields := extractFields(httpGetNode)
-	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true)
-
-	portNode := httpFields["port"]
-	if portNode == nil {
-		v.addError(httpGetNode.Line, "containers.readinessProbe.httpGet.port", "is required")
-	} else {
-		portStr := getScalarValue(portNode)
-		port, err := strconv.Atoi(portStr)
-		if err != nil || port <= 0 || port > 65535 {
-			v.addError(portNode.Line, "containers.readinessProbe.httpGet.port", "value out of range")
-		}
-	}
-}
-
-// Вспомогательные функции
 
 func extractFields(node *yaml.Node) map[string]*yaml.Node {
 	fields := make(map[string]*yaml.Node)
@@ -208,13 +179,6 @@ func extractFields(node *yaml.Node) map[string]*yaml.Node {
 		fields[keyNode.Value] = valueNode
 	}
 	return fields
-}
-
-func getScalarValue(node *yaml.Node) string {
-	if node == nil || node.Kind != yaml.ScalarNode {
-		return ""
-	}
-	return node.Value
 }
 
 func isValidSnakeCase(name string) bool {
@@ -240,7 +204,6 @@ func isValidMemoryFormat(value string) bool {
 	if value == "" {
 		return false
 	}
-	// Проверяем формат: число + суффикс (Mi, Gi и т.п.)
 	hasDigit := false
 	for _, char := range value {
 		if char >= '0' && char <= '9' {
@@ -267,7 +230,6 @@ func main() {
 
 	data, err := os.ReadFile(*filename)
 	if err != nil {
-		// Но если файл не найден — выводим ошибку (это ожидаемо в тестах)
 		fmt.Printf("Error reading file: %v\n", err)
 		os.Exit(1)
 	}
