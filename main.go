@@ -179,23 +179,23 @@ func (v *Validator) validateProbe(probeNode *yaml.Node) {
 	httpGetNode := fields["httpGet"]
 
 	if httpGetNode == nil {
-		v.errorf(probeNode.Line, "containers.readinessProbe.httpGet", "is required")
+		v.errorf(probeNode.Line, "httpGet", "is required")
 		return
 	}
 
 	httpFields := extractFields(httpGetNode)
-	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true)
+	v.validateNode(httpFields["path"], "path", true)
 
 	portNode := httpFields["port"]
 	if portNode == nil {
-		v.errorf(httpGetNode.Line, "containers.readinessProbe.httpGet.port", "is required")
+		v.errorf(httpGetNode.Line, "port", "is required")
 		return
 	}
 
 	portStr := portNode.Value
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 || port >= 65536 {
-		v.errorf(portNode.Line, "containers.readinessProbe.httpGet.port", "value out of range")
+		v.errorf(portNode.Line, "port", "value out of range") // Сокращённый путь
 	}
 }
 
@@ -208,12 +208,13 @@ func (v *Validator) validateResourceRequirements(node *yaml.Node) {
 		}
 		switch field {
 		case "cpu":
+			// Проверяем, что значение — число, а не строка
 			_, err := strconv.Atoi(cpuNode.Value)
 			if err != nil {
-				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
+				v.errorf(cpuNode.Line, "cpu", "must be int")
 			} else if cpuNode.Tag != "!!int" {
-				// Значение числовое, но записано как строка (например, "1")
-				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
+				// Если значение числовое, но записано как строка (например, "2"), считаем ошибкой
+				v.errorf(cpuNode.Line, "cpu", "must be int")
 			}
 		case "memory":
 			if !isValidMemoryFormat(cpuNode.Value) {
