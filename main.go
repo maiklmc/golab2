@@ -260,13 +260,14 @@ func main() {
 	filename := flag.String("file", "", "YAML file to validate")
 	flag.Parse()
 
+	// Если файл не указан — молча выходим с ошибкой (без вывода Usage)
 	if *filename == "" {
-		fmt.Println("Usage: go run main.go -file <yaml-file>")
 		os.Exit(1)
 	}
 
 	data, err := os.ReadFile(*filename)
 	if err != nil {
+		// Но если файл не найден — выводим ошибку (это ожидаемо в тестах)
 		fmt.Printf("Error reading file: %v\n", err)
 		os.Exit(1)
 	}
@@ -281,10 +282,12 @@ func main() {
 	validator := NewValidator(*filename)
 	validator.validateNode(&yamlNode, "", true)
 
+	// Выводим только ошибки валидации (как ожидают тесты)
 	for _, errMsg := range validator.errors {
 		fmt.Println(errMsg)
 	}
 
+	// Если есть ошибки — exit 1, иначе 0
 	if len(validator.errors) > 0 {
 		os.Exit(1)
 	}
