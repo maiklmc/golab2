@@ -90,13 +90,13 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			break
 		}
 		_, err := strconv.Atoi(node.Value)
-		if err == nil {
-			break
-		}
-		if node.Tag == "!!int" {
-			v.addError(node.Line, path, "must be int (invalid format despite !!int tag)")
-		} else {
+		if err != nil {
 			v.addError(node.Line, path, "must be int")
+		}
+	case "containers.ports.containerPort":
+		port, err := strconv.Atoi(node.Value)
+		if err != nil || port <= 0 || port > 65535 {
+			v.addError(node.Line, path, "value out of range")
 		}
 	}
 }
@@ -167,25 +167,7 @@ func (v *Validator) validateContainer(containerNode *yaml.Node) {
 
 func (v *Validator) validatePort(portNode *yaml.Node) {
 	fields := extractFields(portNode)
-
-	portStr := getScalarValue(fields["containerPort"])
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		line := 0
-		if fields["containerPort"] != nil {
-			line = fields["containerPort"].Line
-		}
-		v.addError(line, "containers.ports.containerPort", "must be int")
-		return
-	}
-	if port <= 0 || port > 65535 {
-		line := 0
-		if fields["containerPort"] != nil {
-			line = fields["containerPort"].Line
-		}
-		v.addError(line, "containers.ports.containerPort", "value out of range")
-	}
-
+	v.validateNode(fields["containerPort"], "containers.ports.containerPort", true)
 	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
 }
 
@@ -213,15 +195,13 @@ func (v *Validator) validateProbe(probeNode *yaml.Node) {
 	}
 }
 
-func (v *Validator) validateResourceRequirements(node *yaml.Node) {
-	fields := extractFields(node)
-	v.validateNode(fields["cpu"], "resources.limits.cpu", false)
-	v.validateNode(fields["memory"], "resources.limits.memory", false)
-}
-
 // Вспомогательные функции
+
 func extractFields(node *yaml.Node) map[string]*yaml.Node {
 	fields := make(map[string]*yaml.Node)
+	if node.Kind != yaml.MappingNode {
+		return fields
+	}
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valueNode := node.Content[i+1]
@@ -237,62 +217,75 @@ func getScalarValue(node *yaml.Node) string {
 	return node.Value
 }
 
-func isValidSnakeCase(s string) bool {
-	return strings.Contains(s, "_") && s == strings.ToLower(s)
-}
-
-func isValidMemoryFormat(s string) bool {
-	// Пример: 1Gi, 500Mi, 2G и т.п.
-	if len(s) < 2 {
+func isValidSnakeCase(name string) bool {
+	if name == "" {
 		return false
 	}
-	suffix := s[len(s)-1]
-	if suffix != 'i' {
-		// Без 'i': 1G, 2M
-		_, err := strconv.Atoi(s[:len(s)-1])
-		return err == nil && (suffix == 'G' || suffix == 'M')
-	} else {
-		// С 'i': 1Gi, 500Mi
-		if len(s) < 3 {
-			return false
+	for i, char := range name {
+		if char >= 'a' && char <= 'z' {
+			continue
 		}
-		suffix2 := s[len(s)-2]
-		_, err := strconv.Atoi(s[:len(s)-2])
-		return err == nil && (suffix2 == 'G' || suffix2 == 'M')
+		if char >= '0' && char <= '9' {
+			continue
+		}
+		if char == '_' && i > 0 && i < len(name)-1 {
+			continue
+		}
+		return false
 	}
+	return true
+}
+
+func isValidMemoryFormat(value string) bool {
+	if value == "" {
+		return false
+	}
+	// Проверяем формат: число + суффикс (Mi, Gi и т.п.)
+	hasDigit := false
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			hasDigit = true
+		} else if char == 'M' || char == 'G' || char == 'K' {
+			// Суффикс
+		} else if char == 'i' {
+			// Часть суффикса (Mi, Gi)
+		} else {
+			return false // Недопустимый символ
+		}
+	}
+	return hasDigit && (strings.HasSuffix(value, "Mi") || strings.HasSuffix(value, "Gi") || strings.HasSuffix(value, "Ki"))
 }
 
 func main() {
+	filename := flag.String("file", "", "YAML file to validate")
 	flag.Parse()
 
-	if flag.NArg() != 1 {
-		fmt.Println("Usage: validator <yaml-file>")
+	if *filename == "" {
+		fmt.Println("Usage: go run main.go -file <yaml-file>")
 		os.Exit(1)
 	}
 
-	filename := flag.Arg(0)
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(*filename)
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
 		os.Exit(1)
 	}
 
-	var doc yaml.Node
-	err = yaml.Unmarshal(data, &doc)
+	var yamlNode yaml.Node
+	err = yaml.Unmarshal(data, &yamlNode)
 	if err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		os.Exit(1)
 	}
 
-	validator := NewValidator(filename)
-	validator.validateNode(&doc, "", true)
+	validator := NewValidator(*filename)
+	validator.validateNode(&yamlNode, "", true)
 
-	// Вывод только ошибок (без "YAML is valid")
+	for _, errMsg := range validator.errors {
+		fmt.Println(errMsg)
+	}
+
 	if len(validator.errors) > 0 {
-		for _, errMsg := range validator.errors {
-			fmt.Println(errMsg)
-		}
 		os.Exit(1)
 	}
-	// Если ошибок нет — молча выходим с кодом 0 (без вывода)
 }
