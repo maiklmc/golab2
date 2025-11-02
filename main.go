@@ -83,10 +83,26 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.addError(node.Line, path, "has invalid format '"+node.Value+"'")
 		}
 	case "resources.limits.cpu", "resources.requests.cpu":
+		// Проверка на пустое значение
+		if node.Value == "" {
+			v.addError(node.Line, path, "must be int (empty value)")
+			break
+		}
+
+		// Сначала пытаемся преобразовать в число
 		_, err := strconv.Atoi(node.Value)
-		if err != nil || node.Tag != "!!int" {
+		if err == nil {
+			// Значение успешно преобразовано — считаем валидным
+			break
+		}
+
+		// Если преобразование не удалось, проверяем тег (для крайних случаев)
+		if node.Tag == "!!int" {
+			v.addError(node.Line, path, "must be int (invalid format despite !!int tag)")
+		} else {
 			v.addError(node.Line, path, "must be int")
 		}
+
 	}
 }
 
