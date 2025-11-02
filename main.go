@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-
-	//"path/filepath"
 	"strconv"
 	"strings"
 
@@ -21,7 +19,7 @@ func NewValidator(filename string) *Validator {
 }
 
 func (v *Validator) errorf(line int, field, msg string) {
-	fmt.Fprintf(os.Stderr, "%s:%d %s %s\n", v.filename, line, field, msg)
+	fmt.Println(fmt.Sprintf("%s:%d %s %s", v.filename, line, field, msg))
 	os.Exit(1)
 }
 
@@ -110,7 +108,7 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, required bool)
 	case "containers":
 		for _, containerNode := range node.Content {
 			if containerNode.Kind == yaml.MappingNode {
-				v.validateContainer(containerNode)
+				v.validateContainer(containerNode) // Исправлено
 			}
 		}
 	case "containers.ports":
@@ -176,22 +174,23 @@ func (v *Validator) validateProbe(probeNode *yaml.Node) {
 	httpGetNode := fields["httpGet"]
 
 	if httpGetNode == nil {
-		v.errorf(probeNode.Line, "containers.readinessProbe.httpGet", "is required") // или livenessProbe
+		v.errorf(probeNode.Line, "containers.readinessProbe.httpGet", "is required")
 		return
 	}
 
 	httpFields := extractFields(httpGetNode)
-	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true) // или livenessProbe
-	v.validateNode(httpFields["port"], "containers.readinessProbe.httpGet.port", true) // или livenessProbe
+	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true)
 
-	portStr := getScalarValue(httpFields["port"])
+	portNode := httpFields["port"]
+	if portNode == nil {
+		v.errorf(httpGetNode.Line, "containers.readinessProbe.httpGet.port", "is required")
+		return
+	}
+
+	portStr := portNode.Value
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 || port >= 65536 {
-		line := 0
-		if httpFields["port"] != nil {
-			line = httpFields["port"].Line
-		}
-		v.errorf(line, "containers.readinessProbe.httpGet.port", "value out of range") // или livenessProbe
+		v.errorf(portNode.Line, "containers.readinessProbe.httpGet.port", "value out of range")
 	}
 }
 
@@ -206,13 +205,17 @@ func (v *Validator) validateResourceRequirements(node *yaml.Node) {
 
 		switch field {
 		case "cpu":
-			_, err := strconv.Atoi(cpuNode.Value)
-			if err != nil {
-				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int") // или requests.cpu
+			if cpuNode.Tag != "!!int" {
+				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
+			} else {
+				_, err := strconv.Atoi(cpuNode.Value)
+				if err != nil {
+					v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
+				}
 			}
 		case "memory":
 			if !isValidMemoryFormat(cpuNode.Value) {
-				v.errorf(cpuNode.Line, "resources.limits.memory", "has invalid format '"+cpuNode.Value+"'") // или requests.memory
+				v.errorf(cpuNode.Line, "resources.limits.memory", "has invalid format '"+cpuNode.Value+"'")
 			}
 		}
 	}
@@ -281,26 +284,25 @@ func main() {
 	args := flag.Args()
 
 	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <yaml-file>\n", os.Args[0])
+		fmt.Println("Usage: " + os.Args[0] + " <yaml-file>")
 		os.Exit(1)
 	}
 
 	filename := args[0]
 	content, err := os.ReadFile(filename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read file content: %v\n", err)
+		fmt.Println("cannot read file content: " + err.Error())
 		os.Exit(1)
 	}
 
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot unmarshal file content: %v\n", err)
+		fmt.Println("cannot unmarshal file content: " + err.Error())
 		os.Exit(1)
 	}
 
 	validator := NewValidator(filename)
 
-	// Начинаем валидацию с корневого узла
 	if len(root.Content) == 0 {
 		validator.errorf(0, "", "invalid YAML structure")
 	}
@@ -309,6 +311,5 @@ func main() {
 		validator.validateNode(doc, "", true)
 	}
 
-	// Если ошибок не было, завершаем с кодом 0
 	os.Exit(0)
 }
