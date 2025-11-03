@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -19,223 +18,203 @@ func NewValidator(filename string) *Validator {
 }
 
 func (v *Validator) errorf(line int, field, msg string) {
-	fmt.Printf("%s:%d %s %s\n", v.filename, line, field, msg)
-	os.Exit(1)
+	if line > 0 {
+		fmt.Printf("%s:%d %s %s\n", v.filename, line, field, msg)
+	} else {
+		fmt.Printf("%s %s %s\n", v.filename, field, msg)
+	}
 }
 
-func (v *Validator) validateNode(node *yaml.Node, path string, required bool) {
-	if node == nil {
-		if required {
-			v.errorf(0, path, "is required")
-		}
-		return
-	}
-
+func (v *Validator) validateNode(node *yaml.Node, path string, line int) bool {
 	switch node.Kind {
 	case yaml.ScalarNode:
-		v.validateScalar(node, path)
+		return v.validateScalar(node, path, line)
 	case yaml.MappingNode:
-		v.validateMapping(node, path, required)
+		return v.validateMapping(node, path, line)
 	case yaml.SequenceNode:
-		v.validateSequence(node, path)
+		return v.validateSequence(node, path, line)
+	default:
+		return true // пропускаем другие типы
 	}
 }
 
-func (v *Validator) validateScalar(node *yaml.Node, path string) {
+func (v *Validator) validateScalar(node *yaml.Node, path string, line int) bool {
+	value := node.Value
+
 	switch path {
 	case "apiVersion":
-		if node.Value != "v1" {
-			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
+		if value != "v1" {
+			v.errorf(line, path, "has unsupported value '"+value+"'")
+			return false
 		}
 	case "kind":
-		if node.Value != "Pod" {
-			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
+		if value != "Pod" {
+			v.errorf(line, path, "has unsupported value '"+value+"'")
+			return false
 		}
 	case "metadata.name":
-		if node.Value == "" {
-			v.errorf(node.Line, path, "is required")
+		if value == "" {
+			v.errorf(line, path, "is required")
+			return false
 		}
 	case "spec.os.name":
-		if node.Value != "linux" && node.Value != "windows" {
-			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
+		if value != "linux" && value != "windows" {
+			v.errorf(line, path, "has unsupported value '"+value+"'")
+			return false
 		}
 	case "containers.name":
-		if !isValidSnakeCase(node.Value) {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+		if !isValidSnakeCase(value) {
+			v.errorf(line, path, "has invalid format '"+value+"'")
+			return false
 		}
 	case "containers.image":
-		if !strings.HasPrefix(node.Value, "registry.bigbrother.io/") || !strings.Contains(node.Value, ":") {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+		if !strings.HasPrefix(value, "registry.bigbrother.io/") || !strings.Contains(value, ":") {
+			v.errorf(line, path, "has invalid format '"+value+"'")
+			return false
 		}
-	case "containers.ports.protocol":
-		if node.Value != "TCP" && node.Value != "UDP" {
-			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
+	case "containers.ports.containerPort":
+		port, err := strconv.Atoi(value)
+		if err != nil {
+			v.errorf(line, path, "must be int")
+			return false
+		}
+		if port <= 0 || port >= 65536 {
+			v.errorf(line, path, "value out of range")
+			return false
 		}
 	case "containers.readinessProbe.httpGet.path", "containers.livenessProbe.httpGet.path":
-		if !strings.HasPrefix(node.Value, "/") {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+		if !strings.HasPrefix(value, "/") {
+			v.errorf(line, path, "has invalid format '"+value+"'")
+			return false
 		}
-	case "resources.limits.memory", "resources.requests.memory":
-		if !isValidMemoryFormat(node.Value) {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+	case "containers.readinessProbe.httpGet.port", "containers.livenessProbe.httpGet.port":
+		port, err := strconv.Atoi(value)
+		if err != nil {
+			v.errorf(line, path, "must be int")
+			return false
+		}
+		if port <= 0 || port >= 65536 {
+			v.errorf(line, path, "value out of range")
+			return false
+		}
+	case "containers.resources.limits.memory", "containers.resources.requests.memory":
+		if !isValidMemoryFormat(value) {
+			v.errorf(line, path, "has invalid format '"+value+"'")
+			return false
+		}
+	case "containers.resources.limits.cpu", "containers.resources.requests.cpu":
+		_, err := strconv.Atoi(value)
+		if err != nil {
+			v.errorf(line, path, "must be int")
+			return false
+		}
+	case "containers.ports.protocol":
+		if value != "TCP" && value != "UDP" {
+			v.errorf(line, path, "has unsupported value '"+value+"'")
+			return false
 		}
 	}
+	return true
 }
 
-func (v *Validator) validateMapping(node *yaml.Node, path string, required bool) {
-	fields := make(map[string]*yaml.Node)
+func (v *Validator) validateMapping(node *yaml.Node, path string, line int) bool {
+	valid := true
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valueNode := node.Content[i+1]
-		fields[keyNode.Value] = valueNode
-	}
 
-	switch path {
-	case "":
-		v.validateNode(fields["apiVersion"], "apiVersion", true)
-		v.validateNode(fields["kind"], "kind", true)
-		v.validateNode(fields["metadata"], "metadata", true)
-		v.validateNode(fields["spec"], "spec", true)
-	case "metadata":
-		v.validateNode(fields["name"], "metadata.name", true)
-		v.validateNode(fields["namespace"], "metadata.namespace", false)
-		v.validateNode(fields["labels"], "metadata.labels", false)
-	case "spec":
-		v.validateNode(fields["os"], "spec.os", false)
-		v.validateNode(fields["containers"], "spec.containers", true)
-	case "spec.os":
-		v.validateNode(fields["name"], "spec.os.name", true)
-	case "containers":
-		for _, containerNode := range node.Content {
-			if containerNode.Kind == yaml.MappingNode {
-				v.validateContainer(containerNode) // Исправлено
-			}
+		fieldPath := path
+		if path != "" {
+			fieldPath += "." + keyNode.Value
+		} else {
+			fieldPath = keyNode.Value
 		}
-	case "containers.ports":
-		for _, portNode := range node.Content {
-			if portNode.Kind == yaml.MappingNode {
-				v.validatePort(portNode)
-			}
-		}
-	case "containers.readinessProbe", "containers.livenessProbe":
-		v.validateProbe(node)
-	case "resources":
-		v.validateNode(fields["limits"], "resources.limits", false)
-		v.validateNode(fields["requests"], "resources.requests", false)
-	case "resources.limits", "resources.requests":
-		v.validateResourceRequirements(node)
-	}
-}
 
-func (v *Validator) validateSequence(node *yaml.Node, path string) {
-	for _, item := range node.Content {
-		switch path {
-		case "spec.containers":
-			if item.Kind == yaml.MappingNode {
-				v.validateContainer(item)
+		switch fieldPath {
+		case "metadata":
+			required := []string{"name"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, "metadata."+f, "is required")
+				}
+				valid = false
+			}
+		case "spec":
+			required := []string{"containers"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, "spec."+f, "is required")
+				}
+				valid = false
+			}
+		case "spec.os":
+			required := []string{"name"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, "spec.os."+f, "is required")
+				}
+				valid = false
+			}
+		case "containers":
+			required := []string{"name", "image", "resources"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, "containers."+f, "is required")
+				}
+				valid = false
 			}
 		case "containers.ports":
-			if item.Kind == yaml.MappingNode {
-				v.validatePort(item)
-			}
-		}
-	}
-}
-
-func (v *Validator) validateContainer(containerNode *yaml.Node) {
-	fields := extractFields(containerNode)
-
-	v.validateNode(fields["name"], "containers.name", true)
-	v.validateNode(fields["image"], "containers.image", true)
-	v.validateNode(fields["ports"], "containers.ports", false)
-	v.validateNode(fields["readinessProbe"], "containers.readinessProbe", false)
-	v.validateNode(fields["livenessProbe"], "containers.livenessProbe", false)
-	v.validateNode(fields["resources"], "containers.resources", true)
-}
-
-func (v *Validator) validatePort(portNode *yaml.Node) {
-	fields := extractFields(portNode)
-
-	portStr := getScalarValue(fields["containerPort"])
-	port, err := strconv.Atoi(portStr)
-	if err != nil || port <= 0 || port >= 65536 {
-		line := 0
-		if fields["containerPort"] != nil {
-			line = fields["containerPort"].Line
-		}
-		v.errorf(line, "containers.ports.containerPort", "value out of range")
-	}
-
-	v.validateNode(fields["protocol"], "containers.ports.protocol", false)
-}
-
-func (v *Validator) validateProbe(probeNode *yaml.Node) {
-	fields := extractFields(probeNode)
-	httpGetNode := fields["httpGet"]
-
-	if httpGetNode == nil {
-		v.errorf(probeNode.Line, "containers.readinessProbe.httpGet", "is required")
-		return
-	}
-
-	httpFields := extractFields(httpGetNode)
-	v.validateNode(httpFields["path"], "containers.readinessProbe.httpGet.path", true)
-
-	portNode := httpFields["port"]
-	if portNode == nil {
-		v.errorf(httpGetNode.Line, "containers.readinessProbe.httpGet.port", "is required")
-		return
-	}
-
-	portStr := portNode.Value
-	port, err := strconv.Atoi(portStr)
-	if err != nil || port <= 0 || port >= 65536 {
-		v.errorf(portNode.Line, "containers.readinessProbe.httpGet.port", "value out of range")
-	}
-}
-
-func (v *Validator) validateResourceRequirements(node *yaml.Node) {
-	fields := extractFields(node)
-
-	for _, field := range []string{"cpu", "memory"} {
-		cpuNode := fields[field]
-		if cpuNode == nil {
-			continue
-		}
-
-		switch field {
-		case "cpu":
-			if cpuNode.Tag != "!!int" {
-				v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
-			} else {
-				_, err := strconv.Atoi(cpuNode.Value)
-				if err != nil {
-					v.errorf(cpuNode.Line, "resources.limits.cpu", "must be int")
+			required := []string{"containerPort"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, "containers.ports."+f, "is required")
 				}
+				valid = false
 			}
-		case "memory":
-			if !isValidMemoryFormat(cpuNode.Value) {
-				v.errorf(cpuNode.Line, "resources.limits.memory", "has invalid format '"+cpuNode.Value+"'")
+		case "containers.readinessProbe.httpGet", "containers.livenessProbe.httpGet":
+			required := []string{"path", "port"}
+			if !v.hasRequiredFields(valueNode, required) {
+				for _, f := range required {
+					v.errorf(0, fieldPath+"."+f, "is required")
 			}
+			valid = false
 		}
 	}
+
+		if !v.validateNode(valueNode, fieldPath, valueNode.Line) {
+			valid = false
+		}
+	}
+	return valid
 }
 
-func extractFields(node *yaml.Node) map[string]*yaml.Node {
-	fields := make(map[string]*yaml.Node)
+func (v *Validator) validateSequence(node *yaml.Node, path string, line int) bool {
+	valid := true
+	for _, item := range node.Content {
+		if !v.validateNode(item, path, item.Line) {
+			valid = false
+		}
+	}
+	return valid
+}
+
+func (v *Validator) hasRequiredFields(node *yaml.Node, required []string) bool {
+	if node.Kind != yaml.MappingNode {
+		return false
+	}
+
+	fields := make(map[string]bool)
 	for i := 0; i < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valueNode := node.Content[i+1]
-		fields[keyNode.Value] = valueNode
+		key := node.Content[i].Value
+		fields[key] = true
 	}
-	return fields
-}
 
-func getScalarValue(node *yaml.Node) string {
-	if node == nil || node.Kind != yaml.ScalarNode {
-		return ""
+	for _, field := range required {
+		if !fields[field] {
+			return false
+		}
 	}
-	return node.Value
+	return true
 }
 
 func isValidSnakeCase(s string) bool {
@@ -243,34 +222,32 @@ func isValidSnakeCase(s string) bool {
 		return false
 	}
 	for i, r := range s {
-		if i == 0 && !isLowerLetter(r) {
-			return false
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			if i == 0 {
+				return false // цифра в начале запрещена
+			}
+			continue
 		}
 		if r == '_' {
-			if i+1 < len(s) && !isLowerLetter(rune(s[i+1])) {
-				return false
+			if i == 0 || i == len(s)-1 || s[i-1] == '_' {
+				return false // _ в начале/конце или два подряд
 			}
-		} else if !isLowerLetter(r) && !isDigit(r) {
-			return false
+			continue
 		}
+		return false
 	}
 	return true
-}
-
-func isLowerLetter(r rune) bool {
-	return r >= 'a' && r <= 'z'
-}
-
-func isDigit(r rune) bool {
-	return r >= '0' && r <= '9'
 }
 
 func isValidMemoryFormat(s string) bool {
 	if len(s) < 2 {
 		return false
 	}
-	suffix := s[len(s)-2:]
-	switch suffix {
+	unit := s[len(s)-2:]
+	switch unit {
 	case "Ki", "Mi", "Gi":
 		_, err := strconv.Atoi(s[:len(s)-2])
 		return err == nil
@@ -280,35 +257,42 @@ func isValidMemoryFormat(s string) bool {
 }
 
 func main() {
-	flag.Parse()
-	args := flag.Args()
-
-	if len(args) != 1 {
-		fmt.Println("Usage: " + os.Args[0] + " <yaml-file>")
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: yamlvalid <path-to-yaml>")
 		os.Exit(1)
 	}
 
-	filename := args[0]
+	filename := os.Args[1]
 	content, err := os.ReadFile(filename)
 	if err != nil {
-		fmt.Println("cannot read file content: " + err.Error())
+		fmt.Printf("%s cannot read file: %s\n", filename, err)
 		os.Exit(1)
 	}
 
 	var root yaml.Node
-	if err := yaml.Unmarshal(content, &root); err != nil {
-		fmt.Println("cannot unmarshal file content: " + err.Error())
+	err = yaml.Unmarshal(content, &root)
+	if err != nil {
+		fmt.Printf("%s cannot unmarshal YAML: %s\n", filename, err)
 		os.Exit(1)
 	}
 
 	validator := NewValidator(filename)
+	valid := true
 
-	if len(root.Content) == 0 {
-		validator.errorf(0, "", "invalid YAML structure")
+	// Обходим все документы в YAML (обычно один)
+	for _, doc := range root.Content {
+		if doc.Kind != yaml.DocumentNode {
+			continue
+		}
+		for _, node := range doc.Content {
+			if !validator.validateNode(node, "", node.Line) {
+				valid = false
+			}
+		}
 	}
 
-	for _, doc := range root.Content {
-		validator.validateNode(doc, "", true)
+	if !valid {
+		os.Exit(1)
 	}
 
 	os.Exit(0)
