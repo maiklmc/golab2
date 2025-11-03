@@ -145,8 +145,10 @@ func (v *Validator) validateSequence(node *yaml.Node, path string) {
 	for _, item := range node.Content {
 		switch path {
 		case "spec.containers":
-			if item.Kind == yaml.MappingNode {
-				v.validateContainer(item)
+			for _, item := range node.Content {
+				if item.Kind == yaml.MappingNode {
+					v.validateContainer(item)
+				}
 			}
 		case "containers.ports":
 			if item.Kind == yaml.MappingNode {
