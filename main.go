@@ -12,6 +12,7 @@ import (
 
 type Validator struct {
 	filename string
+	errors   []string
 }
 
 func NewValidator(filename string) *Validator {
@@ -19,20 +20,18 @@ func NewValidator(filename string) *Validator {
 }
 
 func (v *Validator) errorf(line int, field, msg string) {
-    // 1. Берём только базовое имя файла (без пути)
     filename := v.filename
     if slashIdx := strings.LastIndex(filename, "/"); slashIdx != -1 {
         filename = filename[slashIdx+1:]
     }
 
-    // 2. Берём только последнее слово из пути поля (после последней точки)
     fieldName := field
     if dotIdx := strings.LastIndex(fieldName, "."); dotIdx != -1 {
         fieldName = fieldName[dotIdx+1:]
     }
 
-    fmt.Printf("%s:%d %s %s\n", filename, line, fieldName, msg)
-    os.Exit(1)
+    errMsg := fmt.Sprintf("%s:%d %s %s", filename, line, fieldName, msg)
+    v.errors = append(v.errors, errMsg)
 }
 
 
@@ -298,37 +297,51 @@ func isValidMemoryFormat(s string) bool {
 	}
 }
 
+func (v *Validator) reportErrors() {
+    for _, errMsg := range v.errors {
+        fmt.Println(errMsg)
+    }
+    if len(v.errors) > 0 {
+        os.Exit(1)
+    }
+}
+
+
 func main() {
-	flag.Parse()
-	args := flag.Args()
+    flag.Parse()
+    args := flag.Args()
 
-	if len(args) != 1 {
-		fmt.Println("Usage: " + os.Args[0] + " <yaml-file>")
-		os.Exit(1)
-	}
+    if len(args) != 1 {
+        fmt.Println("Usage: " + os.Args[0] + " <yaml-file>")
+        os.Exit(1)
+    }
 
-	filename := args[0]
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Println("cannot read file content: " + err.Error())
-		os.Exit(1)
-	}
+    filename := args[0]
+    content, err := os.ReadFile(filename)
+    if err != nil {
+        fmt.Println("cannot read file content: " + err.Error())
+        os.Exit(1)
+    }
 
-	var root yaml.Node
-	if err := yaml.Unmarshal(content, &root); err != nil {
-		fmt.Println("cannot unmarshal file content: " + err.Error())
-		os.Exit(1)
-	}
+    var root yaml.Node
+    if err := yaml.Unmarshal(content, &root); err != nil {
+        fmt.Println("cannot unmarshal file content: " + err.Error())
+        os.Exit(1)
+    }
 
-	validator := NewValidator(filename)
+    validator := NewValidator(filename)
 
-	if len(root.Content) == 0 {
-		validator.errorf(0, "", "invalid YAML structure")
-	}
+    if len(root.Content) == 0 {
+        validator.errorf(0, "", "invalid YAML structure")
+    }
 
-	for _, doc := range root.Content {
-		validator.validateNode(doc, "", true)
-	}
+    for _, doc := range root.Content {
+        validator.validateNode(doc, "", true)
+    }
 
-	os.Exit(0)
+    // Выводим все накопленные ошибки
+    validator.reportErrors()
+
+    // Если ошибок не было — успешный выход
+    os.Exit(0)
 }
