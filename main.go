@@ -67,6 +67,10 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 		if node.Value == "" {
 			v.errorf(node.Line, path, "is required")
 		}
+	case "spec.os":  // Новая ветка!
+        if node.Value != "linux" && node.Value != "windows" {
+            v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
+        }
 	case "spec.os.name":
 		if node.Value != "linux" && node.Value != "windows" {
 			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
