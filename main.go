@@ -73,9 +73,15 @@ func (v *Validator) validateScalar(node *yaml.Node, path string) {
 			v.errorf(node.Line, path, "has unsupported value '"+node.Value+"'")
 		}
 	case "containers.name":
-		if !isValidSnakeCase(node.Value) {
-			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
-		}
+  	  // Сначала проверяем, что поле обязательно
+  	  if node.Value == "" {
+  	      v.errorf(node.Line, path, "is required")
+  	  }
+  	  // Только потом проверяем формат
+  	  if !isValidSnakeCase(node.Value) {
+  	      v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
+ 	   }
+
 	case "containers.image":
 		if !strings.HasPrefix(node.Value, "registry.bigbrother.io/") || !strings.Contains(node.Value, ":") {
 			v.errorf(node.Line, path, "has invalid format '"+node.Value+"'")
