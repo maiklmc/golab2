@@ -63,10 +63,15 @@ func (v *Validator) validateScalar(node *yaml.Node, path string, line int) bool 
 			return false
 		}
 	case "containers.name":
+		if value == "" {
+			v.errorf(line, path, "is required")
+			return false
+		}
 		if !isValidSnakeCase(value) {
 			v.errorf(line, path, "has invalid format '"+value+"'")
 			return false
 		}
+
 	case "containers.image":
 		if !strings.HasPrefix(value, "registry.bigbrother.io/") || !strings.Contains(value, ":") {
 			v.errorf(line, path, "has invalid format '"+value+"'")
@@ -176,10 +181,10 @@ func (v *Validator) validateMapping(node *yaml.Node, path string, line int) bool
 			if !v.hasRequiredFields(valueNode, required) {
 				for _, f := range required {
 					v.errorf(0, fieldPath+"."+f, "is required")
+				}
+				valid = false
 			}
-			valid = false
 		}
-	}
 
 		if !v.validateNode(valueNode, fieldPath, valueNode.Line) {
 			valid = false
