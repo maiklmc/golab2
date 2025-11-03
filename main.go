@@ -19,9 +19,22 @@ func NewValidator(filename string) *Validator {
 }
 
 func (v *Validator) errorf(line int, field, msg string) {
-	fmt.Printf("%s:%d %s %s\n", v.filename, line, field, msg)
-	os.Exit(1)
+    // 1. Берём только базовое имя файла (без пути)
+    filename := v.filename
+    if slashIdx := strings.LastIndex(filename, "/"); slashIdx != -1 {
+        filename = filename[slashIdx+1:]
+    }
+
+    // 2. Берём только последнее слово из пути поля (после последней точки)
+    fieldName := field
+    if dotIdx := strings.LastIndex(fieldName, "."); dotIdx != -1 {
+        fieldName = fieldName[dotIdx+1:]
+    }
+
+    fmt.Printf("%s:%d %s %s\n", filename, line, fieldName, msg)
+    os.Exit(1)
 }
+
 
 func (v *Validator) validateNode(node *yaml.Node, path string, required bool) {
 	if node == nil {
